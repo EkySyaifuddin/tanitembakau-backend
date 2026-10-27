@@ -11,7 +11,7 @@ app.use(bodyParser.json());
 
 // Konfigurasi Koneksi ke Database Supabase (PostgreSQL) menggunakan connectionString langsung
 const pool = new Pool({
-  connectionString: 'postgresql://postgres.obwqqxklqjjzzapcvgvy:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres',
+  connectionString: 'postgresql://postgres.obwqqxklqjjzzapcvgvy:kktZpwZS8951gd4m@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres',
   ssl: {
     rejectUnauthorized: false // Wajib untuk koneksi Supabase dari cloud hosting Vercel
   }
