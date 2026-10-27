@@ -11,12 +11,12 @@ app.use(bodyParser.json());
 
 // Konfigurasi Koneksi ke Database Supabase (PostgreSQL)
 const pool = new Pool({
-  host: process.env.DB_HOST || 'db.obwqqxklqjizzapcvgvy.supabase.co',
+  host: process.env.DB_HOST || 'db.obwqqxklqjjzzapcvgvy.supabase.co',
   user: process.env.DB_USER || 'postgres',
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'postgres',
   port: process.env.DB_PORT || 5432,
-  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
+  connectionString: 'postgresql://postgres:kktZpWZS8951gd4m@db.obwqqxklqjizzapcvgvy.supabase.co:5432/postgres',
   ssl: {
     rejectUnauthorized: false // Wajib untuk Supabase dari cloud hosting Vercel
   }
