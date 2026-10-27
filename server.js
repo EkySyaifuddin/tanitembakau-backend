@@ -61,21 +61,20 @@ app.post('/api/records', async (req, res) => {
 // 3. POST: Hapus catatan berdasarkan ID (Dengan konversi dan pengecekan tipe data)
 app.post('/api/records/delete', async (req, res) => {
   const { id } = req.body;
-  console.log("Menerima request hapus (via POST) untuk ID:", id, "Tipe:", typeof id);
+  console.log("Menerima request hapus untuk ID:", id);
 
   if (!id) {
     return res.status(400).json({ error: 'ID tidak boleh kosong' });
   }
   
   try {
-    const query = 'DELETE FROM farm_records WHERE id = $1 RETURNING *';
+    // Paksa hapus langsung menggunakan parameterized query standar
+    const query = 'DELETE FROM farm_records WHERE id = $1';
     const result = await pool.query(query, [id]);
     
-    if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Data tidak ditemukan di database' });
-    }
-    
-    res.json({ message: 'Catatan berhasil dihapus', deleted: result.rows[0] });
+    console.log("Baris yang terhapus:", result.rowCount);
+
+    res.json({ message: 'Catatan berhasil dihapus', rowCount: result.rowCount });
   } catch (err) {
     console.error('Error saat menghapus data:', err.message);
     res.status(500).json({ error: err.message });
