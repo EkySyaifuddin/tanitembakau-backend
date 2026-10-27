@@ -16,7 +16,7 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'postgres',
   port: process.env.DB_PORT || 5432,
-  connectionString: process.env.DATABASE_URL,
+  connectionString: process.env.DATABASE_URL || `postgresql://${process.env.DB_USER}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}:${process.env.DB_PORT}/${process.env.DB_NAME}`,
   ssl: {
     rejectUnauthorized: false // Wajib untuk Supabase dari cloud hosting Vercel
   }
