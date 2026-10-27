@@ -62,20 +62,22 @@ app.post('/api/records', async (req, res) => {
 });
 
 // 3. Menghapus catatan berdasarkan ID (DELETE)
-// Contoh rute DELETE di server.js Express
+// Endpoint untuk menghapus catatan berdasarkan ID
 app.delete('/api/records/:id', async (req, res) => {
   const recordId = req.params.id;
   console.log("Menerima request DELETE untuk ID:", recordId);
   
-  const query = 'DELETE FROM farm_records WHERE id = $1 RETURNING id';
   try {
+    const query = 'DELETE FROM farm_records WHERE id = $1 RETURNING *';
     const result = await pool.query(query, [recordId]);
+    
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Data tidak ditemukan di database' });
+      return res.status(404).json({ error: 'Data tidak ditemukan' });
     }
-    res.json({ message: 'Catatan berhasil dihapus' });
+    
+    res.json({ message: 'Catatan berhasil dihapus', deleted: result.rows[0] });
   } catch (err) {
-    console.error('Gagal menghapus data:', err);
+    console.error('Error saat menghapus data:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
