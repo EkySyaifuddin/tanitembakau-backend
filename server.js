@@ -9,16 +9,11 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// Konfigurasi Koneksi ke Database Supabase (PostgreSQL)
+// Konfigurasi Koneksi ke Database Supabase (PostgreSQL) menggunakan connectionString langsung
 const pool = new Pool({
-  host: process.env.DB_HOST || 'db.obwqqxklqjjzzapcvgvy.supabase.co',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME || 'postgres',
-  port: process.env.DB_PORT || 5432,
-  connectionString: 'postgresql://postgres:kktZpWZS8951gd4m@db.obwqqxklqjizzapcvgvy.supabase.co:5432/postgres',
+  connectionString: process.env.DATABASE_URL || 'postgresql://postgres:kktZpWZS8951gd4m@db.obwqqxklqjizzapcvgvy.supabase.co:5432/postgres',
   ssl: {
-    rejectUnauthorized: false // Wajib untuk Supabase dari cloud hosting Vercel
+    rejectUnauthorized: false // Wajib untuk koneksi Supabase dari cloud hosting Vercel
   }
 });
 
@@ -85,7 +80,6 @@ app.delete('/api/records/:id', async (req, res) => {
   }
 });
 
-
 // ==================== ENDPOINT HARGA PASAR (TAMBAHAN) ====================
 
 // 4. Mengambil daftar harga pasar tembakau (GET)
@@ -104,7 +98,6 @@ app.get('/api/market-prices', async (req, res) => {
     ]);
   }
 });
-
 
 // Jalankan Server di Port 3000
 const PORT = process.env.PORT || 3000;
