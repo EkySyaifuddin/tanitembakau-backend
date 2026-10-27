@@ -62,9 +62,10 @@ app.post('/api/records', async (req, res) => {
 });
 
 // 3. Menghapus catatan berdasarkan ID (DELETE)
+// Contoh rute DELETE di server.js Express
 app.delete('/api/records/:id', async (req, res) => {
   const recordId = req.params.id;
-  console.log("Menerima request DELETE untuk ID:", recordId); // Cek log Vercel nanti
+  console.log("Menerima request DELETE untuk ID:", recordId);
   
   const query = 'DELETE FROM farm_records WHERE id = $1 RETURNING id';
   try {
