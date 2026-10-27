@@ -1,78 +1,78 @@
-require('dotenv').config();
-
 const express = require('express');
 const { Pool } = require('pg');
-const bodyParser = require('body-parser');
 const cors = require('cors');
+require('dotenv').config();
 
 const app = express();
-app.use(cors());
-app.use(bodyParser.json());
 
-// Konfigurasi Koneksi ke Database Supabase (PostgreSQL) menggunakan connectionString langsung
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Konfigurasi koneksi ke database Supabase PostgreSQL
 const pool = new Pool({
-  connectionString: 'postgresql://postgres.obwqqxklqjjzzapcvgvy:kktZpwZS8951gd4m@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres',
+  connectionString: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false // Wajib untuk koneksi Supabase dari cloud hosting Vercel
+    rejectUnauthorized: false
   }
 });
 
-// Tes Koneksi Database saat Server Menyala
+// Test koneksi database saat server mulai
 pool.connect((err, client, release) => {
-    if (err) {
-        console.error("Gagal terhubung ke database Supabase:", err.stack);
-        return;
-    }
-    console.log("Berhasil terhubung ke database Supabase (PostgreSQL)!");
-    release();
+  if (err) {
+    return console.error('Error acquiring client', err.stack);
+  }
+  console.log('Successfully connected to database');
+  release();
 });
 
-// ==================== ENDPOINT CATATAN KEUANGAN ====================
-
-// 1. Mengambil seluruh catatan keuangan (GET)
+// 1. GET: Ambil semua catatan keuangan
 app.get('/api/records', async (req, res) => {
-  const query = 'SELECT * FROM farm_records ORDER BY record_date DESC';
-  
   try {
+    const query = 'SELECT * FROM farm_records ORDER BY id DESC';
     const result = await pool.query(query);
     res.json(result.rows);
   } catch (err) {
-    console.error('Gagal mengambil data database:', err);
-    res.status(500).json({ error: 'Gagal mengambil data dari database' });
+    console.error('Error mengambil data:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// 2. Menambah Catatan Keuangan Baru (POST)
+// 2. POST: Tambah catatan baru
 app.post('/api/records', async (req, res) => {
   const { user_id, record_type, category, amount, description, record_date } = req.body;
   
-  const query = `
-    INSERT INTO farm_records (user_id, record_type, category, amount, description, record_date) 
-    VALUES ($1, $2, $3, $4, $5, $6) 
-    RETURNING id
-  `;
-  
   try {
-    const result = await pool.query(query, [user_id, record_type, category, amount, description, record_date]);
-    res.json({ message: 'Catatan berhasil disimpan', id: result.rows[0].id });
+    const query = `
+      INSERT INTO farm_records (user_id, record_type, category, amount, description, record_date) 
+      VALUES ($1, $2, $3, $4, $5, $6) 
+      RETURNING *
+    `;
+    const values = [user_id || 1, record_type, category, amount, description, record_date];
+    const result = await pool.query(query, values);
+    
+    res.status(201).json({ message: 'Catatan berhasil disimpan', data: result.rows[0] });
   } catch (err) {
-    console.error('Gagal menyimpan data ke database:', err);
-    res.status(500).json({ error: 'Gagal menyimpan data ke database' });
+    console.error('Error menyimpan data:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
-// 3. Menghapus catatan berdasarkan ID (DELETE)
-// Endpoint untuk menghapus catatan berdasarkan ID
-app.delete('/api/records/:id', async (req, res) => {
-  const recordId = req.params.id;
-  console.log("Menerima request DELETE untuk ID:", recordId);
+// 3. POST: Hapus catatan berdasarkan ID (Metode POST khusus agar aman & tembus di Vercel)
+app.post('/api/records/delete', async (req, res) => {
+  const { id } = req.body;
+  console.log("Menerima request hapus (via POST) untuk ID:", id);
+
+  if (!id) {
+    return res.status(400).json({ error: 'ID tidak boleh kosong' });
+  }
   
   try {
     const query = 'DELETE FROM farm_records WHERE id = $1 RETURNING *';
-    const result = await pool.query(query, [recordId]);
+    const result = await pool.query(query, [id]);
     
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Data tidak ditemukan' });
+      return res.status(404).json({ error: 'Data tidak ditemukan di database' });
     }
     
     res.json({ message: 'Catatan berhasil dihapus', deleted: result.rows[0] });
@@ -82,27 +82,10 @@ app.delete('/api/records/:id', async (req, res) => {
   }
 });
 
-// ==================== ENDPOINT HARGA PASAR (TAMBAHAN) ====================
-
-// 4. Mengambil daftar harga pasar tembakau (GET)
-app.get('/api/market-prices', async (req, res) => {
-  const query = 'SELECT * FROM market_prices';
-
-  try {
-    const result = await pool.query(query);
-    res.json(result.rows);
-  } catch (err) {
-    console.warn('Tabel market_prices belum ada, menggunakan data fallback.');
-    res.json([
-      { id: 1, komoditas: 'Tembakau Virginia (Grade A)', wilayah: 'Temanggung, Jawa Tengah', harga: 'Rp 55.000 / kg', trend: 'naik', update: 'Hari ini, 10:00 WIB' },
-      { id: 2, komoditas: 'Tembakau Kasturi (Super)', wilayah: 'Jember, Jawa Timur', harga: 'Rp 48.000 / kg', trend: 'naik', update: 'Hari ini, 09:30 WIB' },
-      { id: 3, komoditas: 'Tembakau Madura (Janturan)', wilayah: 'Pamekasan, Madura', harga: 'Rp 42.000 / kg', trend: 'stabil', update: 'Kemarin' },
-    ]);
-  }
-});
-
-// Jalankan Server di Port 3000
+// Jalankan server untuk mode local (opsional, Vercel otomatis menghandle export)
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
   console.log(`Server berjalan di port ${PORT}`);
 });
+
+module.exports = app;
