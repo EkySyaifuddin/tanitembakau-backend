@@ -64,19 +64,18 @@ app.post('/api/records', async (req, res) => {
 // 3. Menghapus catatan berdasarkan ID (DELETE)
 app.delete('/api/records/:id', async (req, res) => {
   const recordId = req.params.id;
+  console.log("Menerima request DELETE untuk ID:", recordId); // Cek log Vercel nanti
+  
   const query = 'DELETE FROM farm_records WHERE id = $1 RETURNING id';
-
   try {
     const result = await pool.query(query, [recordId]);
-    
     if (result.rowCount === 0) {
-      return res.status(404).json({ error: 'Data tidak ditemukan' });
+      return res.status(404).json({ error: 'Data tidak ditemukan di database' });
     }
-
     res.json({ message: 'Catatan berhasil dihapus' });
   } catch (err) {
     console.error('Gagal menghapus data:', err);
-    res.status(500).json({ error: 'Gagal menghapus data dari database' });
+    res.status(500).json({ error: err.message });
   }
 });
 
