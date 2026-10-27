@@ -58,10 +58,10 @@ app.post('/api/records', async (req, res) => {
   }
 });
 
-// 3. POST: Hapus catatan berdasarkan ID (Metode POST khusus agar aman & tembus di Vercel)
+// 3. POST: Hapus catatan berdasarkan ID (Dengan konversi dan pengecekan tipe data)
 app.post('/api/records/delete', async (req, res) => {
   const { id } = req.body;
-  console.log("Menerima request hapus (via POST) untuk ID:", id);
+  console.log("Menerima request hapus (via POST) untuk ID:", id, "Tipe:", typeof id);
 
   if (!id) {
     return res.status(400).json({ error: 'ID tidak boleh kosong' });
@@ -82,7 +82,6 @@ app.post('/api/records/delete', async (req, res) => {
   }
 });
 
-// Jalankan server untuk mode local (opsional, Vercel otomatis menghandle export)
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server berjalan di port ${PORT}`);
