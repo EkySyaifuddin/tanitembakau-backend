@@ -13,10 +13,13 @@ app.use(bodyParser.json());
 const pool = new Pool({
   host: process.env.DB_HOST || 'db.obwqqxklqjizzapcvgvy.supabase.co',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD, 
+  password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME || 'postgres',
   port: process.env.DB_PORT || 5432,
-  ssl: { rejectUnauthorized: false } // Wajib untuk koneksi Cloud Supabase
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false // Wajib untuk Supabase dari cloud hosting Vercel
+  }
 });
 
 // Tes Koneksi Database saat Server Menyala
