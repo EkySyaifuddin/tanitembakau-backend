@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const { Pool } = require('pg');
 const bodyParser = require('body-parser');
@@ -11,7 +13,7 @@ app.use(bodyParser.json());
 const pool = new Pool({
   host: process.env.DB_HOST || 'db.obwqqxklqjizzapcvgvy.supabase.co',
   user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'kktZpwZS8951gd4m', // Ganti dengan password Supabase Anda
+  password: process.env.DB_PASSWORD, 
   database: process.env.DB_NAME || 'postgres',
   port: process.env.DB_PORT || 5432,
   ssl: { rejectUnauthorized: false } // Wajib untuk koneksi Cloud Supabase
@@ -91,7 +93,6 @@ app.get('/api/market-prices', async (req, res) => {
     const result = await pool.query(query);
     res.json(result.rows);
   } catch (err) {
-    // Jika tabel market_prices belum ada di database, kembalikan data dummy agar aplikasi tetap berjalan
     console.warn('Tabel market_prices belum ada, menggunakan data fallback.');
     res.json([
       { id: 1, komoditas: 'Tembakau Virginia (Grade A)', wilayah: 'Temanggung, Jawa Tengah', harga: 'Rp 55.000 / kg', trend: 'naik', update: 'Hari ini, 10:00 WIB' },
