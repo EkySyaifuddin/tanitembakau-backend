@@ -9,12 +9,16 @@ require('dotenv').config();
 
 const app = express();
 
-// Middleware
+// Middleware dengan batas ukuran body untuk mengamankan upload gambar besar
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Konfigurasi Multer untuk menangkap unggahan foto dari Flutter
-const upload = multer({ storage: multer.memoryStorage() });
+// Konfigurasi Multer (penyimpanan memori untuk serverless Vercel)
+const upload = multer({ 
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 } // Maksimal ukuran file 5MB
+});
 
 // Inisialisasi Gemini AI menggunakan API Key dari environment variable Vercel
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
@@ -197,7 +201,7 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
 });
 
 // ==========================================
-// 4. ENDPOINT: DETEKSI HAMA AI (DENGAN PENGAMAN)
+// 4. ENDPOINT: DETEKSI HAMA AI (DENGAN PENGAMAN & 10MB LIMIT)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -209,12 +213,11 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(500).json({ error: 'Server belum dikonfigurasi dengan GEMINI_API_KEY.' });
     }
 
-    // Mengubah buffer gambar ke format inlineData untuk Gemini Vision
     const imageParts = [
       {
         inlineData: {
           data: req.file.buffer.toString('base64'),
-          mimeType: req.file.mimetype
+          mimeType: req.file.mimetype || 'image/jpeg'
         }
       }
     ];
@@ -223,7 +226,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       Anda adalah pakar patologi tanaman tembakau profesional. Analisis foto yang diunggah dengan cermat.
       Jika foto tersebut BUKAN daun atau tanaman tembakau (misalnya daun mangga, benda, atau objek lain), berikan informasi bahwa objek tersebut bukan daun tembakau.
       
-      Kembalikan HANYA format JSON murni tanpa ada pembungkus markdown (seperti \`\`\`json) dengan struktur persis seperti ini:
+      Kembalikan HANYA format JSON murni tanpa ada pembungkus markdown (tanpa \`\`\`json) dengan struktur persis seperti ini:
       {
         "pestName": "Nama Hama / Penyakit / Bukan Tanaman Tembakau",
         "confidence": "Persentase Akurasi (contoh: 95.2%)",
@@ -236,18 +239,17 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
 
-    // Membersihkan format respons agar aman di-parse ke JSON
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
     const analysisResult = JSON.parse(cleanJsonText);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       data: analysisResult
     });
 
   } catch (err) {
     console.error('Error Deteksi Hama AI:', err.message);
-    res.status(500).json({ error: 'Gagal memproses analisis AI: ' + err.message });
+    return res.status(500).json({ error: 'Gagal memproses analisis AI: ' + err.message });
   }
 });
 
