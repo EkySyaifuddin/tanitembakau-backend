@@ -4,6 +4,7 @@ const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
 const multer = require('multer');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
@@ -30,7 +31,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA AI (MENGGUNAKAN AXIOS & REST API LANGSUNG)
+// ENDPOINT: DETEKSI HAMA AI (SDK RESMI)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -43,13 +44,21 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(500).json({ error: 'GEMINI_API_KEY belum diset di environment variable server.' });
     }
 
-    const base64Image = req.file.buffer.toString('base64');
-    const mimeType = req.file.mimetype || 'image/jpeg';
+    // Inisialisasi menggunakan SDK resmi Google Generative AI
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    const promptText = `
+    const imagePart = {
+      inlineData: {
+        data: req.file.buffer.toString('base64'),
+        mimeType: req.file.mimetype || 'image/jpeg'
+      }
+    };
+
+    const prompt = `
       Anda adalah pakar patologi tanaman tembakau profesional. Analisis foto daun yang diunggah dengan cermat.
       Jika foto tersebut bukan daun atau tanaman tembakau (seperti daun mangga atau objek lain), jelaskan pada bagian pestName bahwa itu bukan tanaman tembakau.
-      Berikan respons HANYA dalam format JSON murni tanpa ada pembungkus markdown (tanpa \`\`\`json) dengan struktur persis seperti ini:
+      Berikan respons HANYA dalam format JSON murni tanpa ada pembungkus markdown dengan struktur persis seperti ini:
       {
         "pestName": "Nama Hama / Penyakit / Bukan Tanaman Tembakau",
         "confidence": "95.0%",
@@ -58,36 +67,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Menggunakan Gemini REST API v1 dengan model gemini-1.5-flash
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
-
-    const payload = {
-      contents: [
-        {
-          parts: [
-            { text: promptText },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Image
-              }
-            }
-          ]
-        }
-      ]
-    };
-
-    const response = await axios.post(geminiUrl, payload, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 20000
-    });
-
-    const candidate = response.data?.candidates?.[0];
-    if (!candidate || !candidate.content?.parts?.[0]?.text) {
-      throw new Error('Respons dari Gemini API tidak valid.');
-    }
-
-    const responseText = candidate.content.parts[0].text;
+    const result = await model.generateContent([prompt, imagePart]);
+    const responseText = result.response.text();
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
     const parsedData = JSON.parse(cleanJsonText);
 
@@ -97,9 +78,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('VERCEL AI ERROR:', err.response?.data || err.message);
-    const errorDetail = err.response?.data?.error?.message || err.message;
-    return res.status(500).json({ error: 'Gagal memproses AI: ' + errorDetail });
+    console.error('VERCEL AI ERROR:', err);
+    return res.status(500).json({ error: 'Gagal memproses AI: ' + err.message });
   }
 });
 
