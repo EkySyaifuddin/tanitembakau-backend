@@ -31,7 +31,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA AI (AMAN & DINAMIS)
+// ENDPOINT: DETEKSI HAMA AI (DENGAN AUTO-FALLBACK MODEL)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -44,9 +44,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(500).json({ error: 'GEMINI_API_KEY belum diset di environment variable server.' });
     }
 
-    // Menggunakan model gemini-3.8-flash sesuai rekomendasi sistem Google AI
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
 
     const imagePart = {
       inlineData: {
@@ -67,7 +65,26 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    const result = await model.generateContent([prompt, imagePart]);
+    // Daftar model alternatif yang dicoba secara berurutan jika terjadi gangguan/beban tinggi
+    const modelsToTry = ['gemini-1.5-flash', 'gemini-pro', 'gemini-1.5-pro'];
+    let result = null;
+    let lastError = null;
+
+    for (const modelName of modelsToTry) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        result = await model.generateContent([prompt, imagePart]);
+        if (result) break; // Berhasil, keluar dari loop
+      } catch (modelErr) {
+        lastError = modelErr;
+        console.warn(`Model ${modelName} gagal/sibuk, mencoba alternatif...`);
+      }
+    }
+
+    if (!result) {
+      throw new Error(lastError ? lastError.message : 'Semua model AI sedang sibuk.');
+    }
+
     const responseText = result.response.text();
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
     const parsedData = JSON.parse(cleanJsonText);
