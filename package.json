@@ -1,11 +1,13 @@
 {
   "dependencies": {
+    "@google/generative-ai": "^0.24.1",
     "axios": "^1.21.0",
     "body-parser": "^2.3.0",
     "cheerio": "^1.2.0",
     "cors": "^2.8.6",
     "dotenv": "^18.0.9",
     "express": "^5.2.1",
+    "multer": "^2.5.0",
     "mysql2": "^3.24.4",
     "pg": "^8.23.1"
   }

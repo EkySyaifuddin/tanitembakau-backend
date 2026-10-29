@@ -10,7 +10,7 @@ app.use(cors());
 const pool = new Pool({
   host: 'db.obwqqxklqjizzapcvgvy.supabase.co', // Host dari project Supabase Anda
   user: 'postgres',
-  password: 'PASSWORD_SUPABASE_ANDA',       // Password yang Anda buat saat bikin database
+  password: 'kktZpwZS8951gd4m',       // Password yang Anda buat saat bikin database
   database: 'postgres',
   port: 5432,
   ssl: { rejectUnauthorized: false }         // Wajib untuk koneksi cloud Supabase
