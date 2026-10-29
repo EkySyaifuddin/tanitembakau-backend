@@ -44,9 +44,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(500).json({ error: 'GEMINI_API_KEY belum diset di environment variable server.' });
     }
 
-    // Menggunakan model gemini-2.0-flash terbaru yang aktif
+    // Menggunakan model gemini-3.8-flash sesuai rekomendasi sistem Google AI
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-3.8-flash' });
 
     const imagePart = {
       inlineData: {
