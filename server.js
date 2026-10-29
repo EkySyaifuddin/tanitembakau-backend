@@ -1,6 +1,8 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
+const axios = require('axios');
+const cheerio = require('cheerio');
 require('dotenv').config();
 
 const app = express();
@@ -99,18 +101,18 @@ app.get('/api/market-prices', async (req, res) => {
     const result = await pool.query(query);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error mengambil harga pasar:', err.message);
+    console.error('Error mengambil data harga pasar:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
 
-// POST: Tambah data harga pasar baru (Opsional / Admin)
+// POST: Tambah data harga pasar baru (Manual / Opsional)
 app.post('/api/market-prices', async (req, res) => {
   const { komoditas, wilayah, harga, trend, sumber } = req.body;
   try {
     const query = `
-      INSERT INTO market_prices (komoditas, wilayah, harga, trend, sumber) 
-      VALUES ($1, $2, $3, $4, $5) 
+      INSERT INTO market_prices (komoditas, wilayah, harga, trend, sumber, updated_at) 
+      VALUES ($1, $2, $3, $4, $5, NOW()) 
       RETURNING *
     `;
     const values = [komoditas, wilayah, harga, trend || 'stabil', sumber || 'Dinas/APTI'];
@@ -120,6 +122,72 @@ app.post('/api/market-prices', async (req, res) => {
   } catch (err) {
     console.error('Error menyimpan harga pasar:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 3. ENDPOINT: WEB SCRAPING LIVE (Otomatis dari Sumber Luar)
+// ==========================================
+app.post('/api/market-prices/scrape-live', async (req, res) => {
+  try {
+    // Ganti targetUrl dengan situs portal berita/agribisnis target Anda
+    const targetUrl = 'https://sumber-berita-pangan.id/harga-tembakau'; 
+
+    const { data: html } = await axios.get(targetUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+
+    const $ = cheerio.load(html);
+    const scrapedData = [];
+
+    // Parsing elemen HTML situs sumber (sesuaikan selector HTML dengan situs target)
+    $('table.tabel-harga tbody tr').each((index, element) => {
+      const komoditas = $(element).find('.nama-komoditas').text().trim();
+      const wilayah = $(element).find('.wilayah').text().trim();
+      const harga = $(element).find('.harga').text().trim();
+      const trendText = $(element).find('.trend').text().trim().toLowerCase();
+      
+      let trend = 'stabil';
+      if (trendText.includes('naik') || trendText.includes('up')) trend = 'naik';
+      if (trendText.includes('turun') || trendText.includes('down')) trend = 'turun';
+
+      if (komoditas && harga) {
+        scrapedData.push({ komoditas, wilayah, harga, trend, sumber: 'Scraped Live dari Portal Resmi' });
+      }
+    });
+
+    // Simpan atau Perbarui (Upsert) ke database Supabase
+    for (let item of scrapedData) {
+      const checkQuery = 'SELECT id FROM market_prices WHERE komoditas = $1 AND wilayah = $2';
+      const checkResult = await pool.query(checkQuery, [item.komoditas, item.wilayah]);
+
+      if (checkResult.rows.length > 0) {
+        const updateQuery = `
+          UPDATE market_prices 
+          SET harga = $1, trend = $2, sumber = $3, updated_at = NOW() 
+          WHERE komoditas = $4 AND wilayah = $5
+        `;
+        await pool.query(updateQuery, [item.harga, item.trend, item.sumber, item.komoditas, item.wilayah]);
+      } else {
+        const insertQuery = `
+          INSERT INTO market_prices (komoditas, wilayah, harga, trend, sumber, updated_at) 
+          VALUES ($1, $2, $3, $4, $5, NOW())
+        `;
+        await pool.query(insertQuery, [item.komoditas, item.wilayah, item.harga, item.trend, item.sumber]);
+      }
+    }
+
+    res.status(200).json({
+      message: 'Berhasil melakukan Scraping Live dan memperbarui database!',
+      totalUpdated: scrapedData.length,
+      data: scrapedData
+    });
+
+  } catch (err) {
+    console.error('Gagal Scraping Data Live:', err.message);
+    res.status(500).json({ error: 'Gagal melakukan scraping data live: ' + err.message });
   }
 });
 
