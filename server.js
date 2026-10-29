@@ -26,7 +26,11 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// 1. GET: Ambil semua catatan keuangan
+// ==========================================
+// 1. ENDPOINTS: CATATAN KEUANGAN (farm_records)
+// ==========================================
+
+// GET: Ambil semua catatan keuangan
 app.get('/api/records', async (req, res) => {
   try {
     const query = 'SELECT * FROM farm_records ORDER BY id DESC';
@@ -38,7 +42,7 @@ app.get('/api/records', async (req, res) => {
   }
 });
 
-// 2. POST: Tambah catatan baru
+// POST: Tambah catatan keuangan baru
 app.post('/api/records', async (req, res) => {
   const { user_id, record_type, category, amount, description, record_date } = req.body;
   
@@ -58,7 +62,7 @@ app.post('/api/records', async (req, res) => {
   }
 });
 
-// 3. DELETE: Hapus catatan berdasarkan ID via URL Parameter (:id)
+// DELETE: Hapus catatan keuangan berdasarkan ID
 app.delete('/api/records/:id', async (req, res) => {
   const { id } = req.params;
   console.log("Menerima request hapus untuk ID:", id);
@@ -80,6 +84,41 @@ app.delete('/api/records/:id', async (req, res) => {
     res.json({ message: 'Catatan berhasil dihapus', rowCount: result.rowCount });
   } catch (err) {
     console.error('Error saat menghapus data:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================
+// 2. ENDPOINTS: HARGA PASAR (market_prices)
+// ==========================================
+
+// GET: Ambil semua data harga pasar tembakau secara dinamis
+app.get('/api/market-prices', async (req, res) => {
+  try {
+    const query = 'SELECT * FROM market_prices ORDER BY id ASC';
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error mengambil data harga pasar:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST: Tambah data harga pasar baru (Opsional / Admin)
+app.post('/api/market-prices', async (req, res) => {
+  const { komoditas, wilayah, harga, trend, sumber } = req.body;
+  try {
+    const query = `
+      INSERT INTO market_prices (komoditas, wilayah, harga, trend, sumber) 
+      VALUES ($1, $2, $3, $4, $5) 
+      RETURNING *
+    `;
+    const values = [komoditas, wilayah, harga, trend || 'stabil', sumber || 'Dinas/APTI'];
+    const result = await pool.query(query, values);
+    
+    res.status(201).json({ message: 'Harga pasar berhasil ditambahkan', data: result.rows[0] });
+  } catch (err) {
+    console.error('Error menyimpan harga pasar:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
