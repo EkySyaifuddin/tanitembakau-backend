@@ -3,6 +3,8 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
+const multer = require('multer');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
@@ -10,6 +12,12 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// Konfigurasi Multer untuk menangkap unggahan foto dari Flutter
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Inisialisasi Gemini AI menggunakan API Key dari environment variable
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 // Konfigurasi koneksi ke database Supabase PostgreSQL
 const pool = new Pool({
@@ -31,8 +39,6 @@ pool.connect((err, client, release) => {
 // ==========================================
 // 1. ENDPOINTS: CATATAN KEUANGAN (farm_records)
 // ==========================================
-
-// GET: Ambil semua catatan keuangan
 app.get('/api/records', async (req, res) => {
   try {
     const query = 'SELECT * FROM farm_records ORDER BY id DESC';
@@ -44,7 +50,6 @@ app.get('/api/records', async (req, res) => {
   }
 });
 
-// POST: Tambah catatan keuangan baru
 app.post('/api/records', async (req, res) => {
   const { user_id, record_type, category, amount, description, record_date } = req.body;
   
@@ -64,11 +69,8 @@ app.post('/api/records', async (req, res) => {
   }
 });
 
-// DELETE: Hapus catatan keuangan berdasarkan ID
 app.delete('/api/records/:id', async (req, res) => {
   const { id } = req.params;
-  console.log("Menerima request hapus untuk ID:", id);
-
   if (!id) {
     return res.status(400).json({ error: 'ID tidak boleh kosong' });
   }
@@ -76,8 +78,6 @@ app.delete('/api/records/:id', async (req, res) => {
   try {
     const query = 'DELETE FROM farm_records WHERE id = $1';
     const result = await pool.query(query, [id]);
-    
-    console.log("Baris yang terhapus:", result.rowCount);
 
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Data dengan ID tersebut tidak ditemukan' });
@@ -93,8 +93,6 @@ app.delete('/api/records/:id', async (req, res) => {
 // ==========================================
 // 2. ENDPOINTS: HARGA PASAR (market_prices)
 // ==========================================
-
-// GET: Ambil semua data harga pasar tembakau secara dinamis
 app.get('/api/market-prices', async (req, res) => {
   try {
     const query = 'SELECT * FROM market_prices ORDER BY id ASC';
@@ -106,7 +104,6 @@ app.get('/api/market-prices', async (req, res) => {
   }
 });
 
-// POST: Tambah data harga pasar baru (Manual / Opsional)
 app.post('/api/market-prices', async (req, res) => {
   const { komoditas, wilayah, harga, trend, sumber } = req.body;
   try {
@@ -132,9 +129,7 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
   let scrapedData = [];
 
   try {
-    // URL Portal acuan agribisnis yang aktif atau diganti sesuai kebutuhan
     const targetUrl = 'https://jagadtani.com/'; 
-
     const { data: html } = await axios.get(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
@@ -143,8 +138,6 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
     });
 
     const $ = cheerio.load(html);
-
-    // Contoh selector web scraping (Sesuaikan dengan elemen HTML situs target aktual jika ada)
     $('.article-item, .content-row').each((index, element) => {
       const title = $(element).find('h2, h3').text().trim();
       if (title.toLowerCase().includes('tembakau')) {
@@ -158,11 +151,9 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
       }
     });
   } catch (err) {
-    console.warn('Peringatan: Gagal melakukan live scraping dari URL luar, beralih menggunakan data acuan standar:', err.message);
+    console.warn('Peringatan: Gagal live scraping, beralih ke acuan standar:', err.message);
   }
 
-  // Jika hasil scraping kosong (karena struktur HTML berubah atau offline), 
-  // gunakan data acuan standar komoditas tembakau agar aplikasi Flutter tetap terisi data.
   if (scrapedData.length === 0) {
     scrapedData = [
       { komoditas: 'Tembakau Virginia', wilayah: 'Temanggung', harga: 'Rp 62.000 /kg', trend: 'naik', sumber: 'Acuan Resmi APTI' },
@@ -173,7 +164,6 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
   }
 
   try {
-    // Simpan atau Perbarui (Upsert) ke database Supabase
     for (let item of scrapedData) {
       const checkQuery = 'SELECT id FROM market_prices WHERE komoditas = $1 AND wilayah = $2';
       const checkResult = await pool.query(checkQuery, [item.komoditas, item.wilayah]);
@@ -203,6 +193,62 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
   } catch (dbErr) {
     console.error('Gagal menyimpan ke Database Supabase:', dbErr.message);
     res.status(500).json({ error: 'Gagal menyimpan ke database: ' + dbErr.message });
+  }
+});
+
+// ==========================================
+// 4. ENDPOINT: DETEKSI HAMA MURNI 100% GEMINI AI
+// ==========================================
+app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Harap unggah foto daun atau tanaman tembakau.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'API Key Gemini belum dikonfigurasi di server.' });
+    }
+
+    // Ubah buffer gambar ke format yang bisa dibaca Gemini Vision
+    const imageParts = [
+      {
+        inlineData: {
+          data: req.file.buffer.toString('base64'),
+          mimeType: req.file.mimetype
+        }
+      }
+    ];
+
+    const prompt = `
+      Anda adalah pakar patologi tanaman tembakau profesional. Analisis foto daun yang diunggah oleh petani ini dengan teliti.
+      Tentukan jenis hama, penyakit, atau apakah daun tersebut sehat.
+      
+      Kembalikan jawaban HANYA dalam format JSON murni tanpa ada teks lain, tanpa tanda markdown (seperti \`\`\`json), dengan struktur persis seperti ini:
+      {
+        "pestName": "Nama Hama / Penyakit / Tanaman Sehat",
+        "confidence": "Persentase Akurasi (contoh: 95.2%)",
+        "symptoms": "Deskripsi gejala spesifik yang terlihat pada foto daun",
+        "solution": "Rekomendasi langkah penanganan teknis penanggulangan untuk petani"
+      }
+    `;
+
+    // Menggunakan model Gemini Flash untuk analisis gambar yang cepat & akurat
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const result = await model.generateContent([prompt, ...imageParts]);
+    const responseText = result.response.text();
+
+    // Membersihkan teks respons jika masih ada pembungkus markdown
+    const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
+    const analysisResult = JSON.parse(cleanJsonText);
+
+    res.status(200).json({
+      success: true,
+      data: analysisResult
+    });
+
+  } catch (err) {
+    console.error('Error Deteksi Hama AI:', err.message);
+    res.status(500).json({ error: 'Gagal menganalisis gambar dengan AI: ' + err.message });
   }
 });
 
