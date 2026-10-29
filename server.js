@@ -99,7 +99,7 @@ app.get('/api/market-prices', async (req, res) => {
     const result = await pool.query(query);
     res.json(result.rows);
   } catch (err) {
-    console.error('Error mengambil data harga pasar:', err.message);
+    console.error('Error mengambil harga pasar:', err.message);
     res.status(500).json({ error: err.message });
   }
 });
