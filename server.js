@@ -16,8 +16,8 @@ app.use(express.json());
 // Konfigurasi Multer untuk menangkap unggahan foto dari Flutter
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Inisialisasi Gemini AI menggunakan API Key dari environment variable
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Inisialisasi Gemini AI menggunakan API Key dari environment variable Vercel
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
 // Konfigurasi koneksi ke database Supabase PostgreSQL
 const pool = new Pool({
@@ -197,7 +197,7 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
 });
 
 // ==========================================
-// 4. ENDPOINT: DETEKSI HAMA MURNI 100% GEMINI AI
+// 4. ENDPOINT: DETEKSI HAMA AI (DENGAN PENGAMAN)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -206,10 +206,10 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     }
 
     if (!process.env.GEMINI_API_KEY) {
-      return res.status(500).json({ error: 'API Key Gemini belum dikonfigurasi di server.' });
+      return res.status(500).json({ error: 'Server belum dikonfigurasi dengan GEMINI_API_KEY.' });
     }
 
-    // Ubah buffer gambar ke format yang bisa dibaca Gemini Vision
+    // Mengubah buffer gambar ke format inlineData untuk Gemini Vision
     const imageParts = [
       {
         inlineData: {
@@ -220,24 +220,23 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     ];
 
     const prompt = `
-      Anda adalah pakar patologi tanaman tembakau profesional. Analisis foto daun yang diunggah oleh petani ini dengan teliti.
-      Tentukan jenis hama, penyakit, atau apakah daun tersebut sehat.
+      Anda adalah pakar patologi tanaman tembakau profesional. Analisis foto yang diunggah dengan cermat.
+      Jika foto tersebut BUKAN daun atau tanaman tembakau (misalnya daun mangga, benda, atau objek lain), berikan informasi bahwa objek tersebut bukan daun tembakau.
       
-      Kembalikan jawaban HANYA dalam format JSON murni tanpa ada teks lain, tanpa tanda markdown (seperti \`\`\`json), dengan struktur persis seperti ini:
+      Kembalikan HANYA format JSON murni tanpa ada pembungkus markdown (seperti \`\`\`json) dengan struktur persis seperti ini:
       {
-        "pestName": "Nama Hama / Penyakit / Tanaman Sehat",
+        "pestName": "Nama Hama / Penyakit / Bukan Tanaman Tembakau",
         "confidence": "Persentase Akurasi (contoh: 95.2%)",
-        "symptoms": "Deskripsi gejala spesifik yang terlihat pada foto daun",
-        "solution": "Rekomendasi langkah penanganan teknis penanggulangan untuk petani"
+        "symptoms": "Deskripsi gejala spesifik yang terlihat pada foto",
+        "solution": "Rekomendasi langkah penanganan teknis untuk petani"
       }
     `;
 
-    // Menggunakan model Gemini Flash untuk analisis gambar yang cepat & akurat
     const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     const result = await model.generateContent([prompt, ...imageParts]);
     const responseText = result.response.text();
 
-    // Membersihkan teks respons jika masih ada pembungkus markdown
+    // Membersihkan format respons agar aman di-parse ke JSON
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
     const analysisResult = JSON.parse(cleanJsonText);
 
@@ -248,7 +247,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
 
   } catch (err) {
     console.error('Error Deteksi Hama AI:', err.message);
-    res.status(500).json({ error: 'Gagal menganalisis gambar dengan AI: ' + err.message });
+    res.status(500).json({ error: 'Gagal memproses analisis AI: ' + err.message });
   }
 });
 
