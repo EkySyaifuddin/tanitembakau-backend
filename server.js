@@ -55,9 +55,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Inisialisasi Google Generative AI SDK resmi
+    // Menggunakan model spesifik yang kompatibel dengan kunci proyek Google Cloud (AQ...)
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash-001' });
 
     const imagePart = {
       inlineData: {
