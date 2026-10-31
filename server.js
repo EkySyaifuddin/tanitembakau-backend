@@ -41,8 +41,16 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(500).json({ error: 'GCP_SERVICE_ACCOUNT_KEY belum diset di environment variable Vercel.' });
     }
 
-    // Parse teks JSON kredensial dari environment variable
-    const credentials = JSON.parse(serviceAccountKeyJson);
+    // Parse teks JSON kredensial dan pastikan private_key mereparasi karakter newline (\n) dengan benar
+    let credentials;
+    try {
+      credentials = JSON.parse(serviceAccountKeyJson);
+      if (credentials.private_key) {
+        credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+      }
+    } catch (parseError) {
+      throw new Error('Format JSON GCP_SERVICE_ACCOUNT_KEY tidak valid: ' + parseError.message);
+    }
 
     const base64Image = req.file.buffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/jpeg';
@@ -59,7 +67,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Konfigurasi GoogleAuth menggunakan kredensial Service Account secara langsung
+    // Konfigurasi GoogleAuth menggunakan kredensial Service Account
     const auth = new GoogleAuth({
       credentials: credentials,
       scopes: ['https://www.googleapis.com/auth/cloud-platform']
