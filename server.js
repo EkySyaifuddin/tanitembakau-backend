@@ -1,8 +1,8 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
+const axios = require('axios');
 const multer = require('multer');
-const { VertexAI } = require('@google-cloud/aiplatform');
 require('dotenv').config();
 
 const app = express();
@@ -27,7 +27,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA DENGAN VERTEX AI (KOMPATIBEL KUNCI AQ...)
+// ENDPOINT: DETEKSI HAMA 100% AI (DIRECT REST API)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -35,36 +35,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const serviceAccountKeyJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
     const apiKey = process.env.GEMINI_API_KEY;
-
-    let vertexAI;
-
-    // Jika menggunakan Service Account JSON (yang berisi project_id dan private_key)
-    if (serviceAccountKeyJson) {
-      let credentials;
-      try {
-        credentials = JSON.parse(serviceAccountKeyJson);
-        if (credentials.private_key) {
-          credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
-        }
-      } catch (e) {
-        throw new Error('Format JSON Service Account tidak valid.');
-      }
-
-      vertexAI = new VertexAI({
-        project: credentials.project_id || 'tanitembakau',
-        location: 'us-central1',
-        googleAuthOptions: { credentials }
-      });
-    } else if (apiKey) {
-      // Jika menggunakan key AQ... sebagai token/API key Vertex AI
-      vertexAI = new VertexAI({
-        project: 'tanitembakau', // Sesuaikan dengan project id GCP Anda
-        location: 'us-central1'
-      });
-    } else {
-      return res.status(500).json({ error: 'Kredensial GCP / GEMINI_API_KEY belum diatur di Vercel.' });
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY belum diatur di environment variable Vercel.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -82,15 +55,12 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Inisialisasi model melalui Vertex AI (Mendukung penuh akun enterprise / kunci AQ...)
-    const model = vertexAI.getGenerativeModel({
-      model: 'gemini-1.5-flash-001',
-    });
+    // Menggunakan endpoint Vertex AI / Generative Language v1 dengan metode HTTP langsung (Tanpa SDK berat)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
-    const request = {
+    const payload = {
       contents: [
         {
-          role: 'user',
           parts: [
             { text: promptText },
             {
@@ -101,17 +71,19 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
             }
           ]
         }
-      ],
+      ]
     };
 
-    const streamingResp = await model.generateContent(request);
-    const aggregatedResponse = await streamingResp.response;
-    
-    const candidate = aggregatedResponse.candidates?.[0];
+    const response = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
+    });
+
+    const candidate = response.data?.candidates?.[0];
     const responseText = candidate?.content?.parts?.[0]?.text;
 
     if (!responseText) {
-      throw new Error('Respons dari server Vertex AI kosong.');
+      throw new Error('Respons dari server AI kosong.');
     }
 
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
@@ -123,8 +95,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('VERTEX AI ERROR:', err.message);
-    return res.status(500).json({ error: 'Gagal memproses AI: ' + err.message });
+    console.error('AI API ERROR:', err.response?.data || err.message);
+    const errorMsg = err.response?.data?.error?.message || err.message;
+    return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
 });
 
