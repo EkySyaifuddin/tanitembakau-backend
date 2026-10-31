@@ -1,9 +1,8 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
-const axios = require('axios');
 const multer = require('multer');
-const { GoogleAuth } = require('google-auth-library');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 require('dotenv').config();
 
 const app = express();
@@ -28,7 +27,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (SERVICE ACCOUNT OAUTH)
+// ENDPOINT: DETEKSI HAMA 100% AI (GEMINI SDK)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -36,20 +35,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const serviceAccountKeyJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
-    if (!serviceAccountKeyJson) {
-      return res.status(500).json({ error: 'GCP_SERVICE_ACCOUNT_KEY belum diset di environment variable Vercel.' });
-    }
-
-    // Parse teks JSON kredensial dan pastikan private_key mereparasi karakter newline (\n) dengan benar
-    let credentials;
-    try {
-      credentials = JSON.parse(serviceAccountKeyJson);
-      if (credentials.private_key) {
-        credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
-      }
-    } catch (parseError) {
-      throw new Error('Format JSON GCP_SERVICE_ACCOUNT_KEY tidak valid: ' + parseError.message);
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY belum diset di environment variable Vercel.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -67,48 +55,21 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Konfigurasi GoogleAuth menggunakan kredensial Service Account
-    const auth = new GoogleAuth({
-      credentials: credentials,
-      scopes: ['https://www.googleapis.com/auth/cloud-platform']
-    });
+    // Inisialisasi Google Generative AI SDK resmi
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
 
-    const client = await auth.getClient();
-    const accessToken = await client.getAccessToken();
-    const tokenStr = accessToken.token || accessToken;
-
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent`;
-
-    const payload = {
-      contents: [
-        {
-          parts: [
-            { text: promptText },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Image
-              }
-            }
-          ]
-        }
-      ]
+    const imagePart = {
+      inlineData: {
+        data: base64Image,
+        mimeType: mimeType
+      }
     };
 
-    const response = await axios.post(geminiUrl, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${tokenStr}`
-      },
-      timeout: 30000
-    });
+    const result = await model.generateContent([promptText, imagePart]);
+    const response = await result.response;
+    const responseText = response.text();
 
-    const candidate = response.data?.candidates?.[0];
-    if (!candidate || !candidate.content?.parts?.[0]?.text) {
-      throw new Error('Respons dari server AI tidak valid.');
-    }
-
-    const responseText = candidate.content.parts[0].text;
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
     const parsedData = JSON.parse(cleanJsonText);
 
@@ -118,9 +79,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('VERCEL AI ERROR:', err.response?.data || err.message);
-    const errorDetail = err.response?.data?.error?.message || err.message;
-    return res.status(500).json({ error: 'Gagal memproses AI: ' + errorDetail });
+    console.error('VERCEL AI ERROR:', err.message);
+    return res.status(500).json({ error: 'Gagal memproses AI: ' + err.message });
   }
 });
 
