@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
+const { GoogleAuth } = require('google-auth-library');
 require('dotenv').config();
 
 const app = express();
@@ -27,7 +28,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (BEARER TOKEN / AQ...)
+// ENDPOINT: DETEKSI HAMA 100% AI (SERVICE ACCOUNT OAUTH)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -35,10 +36,13 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY belum diset di environment variable.' });
+    const serviceAccountKeyJson = process.env.GCP_SERVICE_ACCOUNT_KEY;
+    if (!serviceAccountKeyJson) {
+      return res.status(500).json({ error: 'GCP_SERVICE_ACCOUNT_KEY belum diset di environment variable Vercel.' });
     }
+
+    // Parse teks JSON kredensial dari environment variable
+    const credentials = JSON.parse(serviceAccountKeyJson);
 
     const base64Image = req.file.buffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/jpeg';
@@ -55,8 +59,16 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Menggunakan endpoint resmi Generative Language dengan Bearer Authorization
-    // Ini adalah cara resmi untuk memproses token berformat AQ... secara 100% AI
+    // Konfigurasi GoogleAuth menggunakan kredensial Service Account secara langsung
+    const auth = new GoogleAuth({
+      credentials: credentials,
+      scopes: ['https://www.googleapis.com/auth/cloud-platform']
+    });
+
+    const client = await auth.getClient();
+    const accessToken = await client.getAccessToken();
+    const tokenStr = accessToken.token || accessToken;
+
     const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
@@ -78,7 +90,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     const response = await axios.post(geminiUrl, payload, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`
+        'Authorization': `Bearer ${tokenStr}`
       },
       timeout: 30000
     });
