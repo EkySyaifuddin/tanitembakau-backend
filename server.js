@@ -2,7 +2,6 @@ const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
-const cheerio = require('cheerio');
 const multer = require('multer');
 require('dotenv').config();
 
@@ -12,7 +11,6 @@ app.use(cors());
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-// Gunakan memory storage multer standar untuk serverless
 const upload = multer({ storage: multer.memoryStorage() });
 
 const pool = new Pool({
@@ -20,7 +18,6 @@ const pool = new Pool({
   ssl: { rejectUnauthorized: false }
 });
 
-// Test koneksi database saat server mulai
 pool.connect((err, client, release) => {
   if (err) {
     return console.error('Error acquiring database client', err.stack);
@@ -30,7 +27,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA AI (MENGGUNAKAN BEARER TOKEN / OAUTH)
+// ENDPOINT: DETEKSI HAMA 100% AI (BEARER TOKEN / AQ...)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -40,7 +37,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY belum diset di environment variable server.' });
+      return res.status(500).json({ error: 'GEMINI_API_KEY belum diset di environment variable.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -58,8 +55,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Menggunakan endpoint Gemini v1 dengan Bearer Token (Authorization Header)
-    // Cocok untuk token GCP/OAuth berformat AQ...
+    // Menggunakan endpoint resmi Generative Language dengan Bearer Authorization
+    // Ini adalah cara resmi untuk memproses token berformat AQ... secara 100% AI
     const geminiUrl = `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
@@ -83,12 +80,12 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`
       },
-      timeout: 20000
+      timeout: 30000
     });
 
     const candidate = response.data?.candidates?.[0];
     if (!candidate || !candidate.content?.parts?.[0]?.text) {
-      throw new Error('Respons dari Gemini API tidak valid.');
+      throw new Error('Respons dari server AI tidak valid.');
     }
 
     const responseText = candidate.content.parts[0].text;
@@ -108,7 +105,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
 });
 
 // ==========================================
-// ENDPOINTS LAIN: KEUANGAN & HARGA PASAR
+// ENDPOINT LAINNYA (DATABASE)
 // ==========================================
 app.get('/api/records', async (req, res) => {
   try {
