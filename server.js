@@ -3,6 +3,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
+const { GoogleAuth } = require('google-auth-library');
 require('dotenv').config();
 
 const app = express();
@@ -27,7 +28,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% VERTEX AI
+// ENDPOINT: DETEKSI HAMA 100% GOOGLE AUTH
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -35,9 +36,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const aqKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
-    if (!aqKey) {
-      return res.status(500).json({ error: 'API key belum diatur di Vercel.' });
+    const serviceAccountJson = process.env.GCP_SERVICE_ACCOUNT_KEY || process.env.GEMINI_API_KEY;
+    if (!serviceAccountJson) {
+      return res.status(500).json({ error: 'Kredensial belum diatur di environment Vercel.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -55,8 +56,26 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Gunakan Vertex AI Publisher Endpoint regional us-central1 dengan project number 77245166162
-    const projectId = '77245166162';
+    let accessToken = '';
+    let projectId = 'tanitembakau';
+
+    // Jika berupa JSON Service Account, gunakan GoogleAuth untuk generate token resmi
+    if (serviceAccountJson.trim().startsWith('{')) {
+      const credentialsObj = JSON.parse(serviceAccountJson);
+      projectId = credentialsObj.project_id || 'tanitembakau';
+      
+      const auth = new GoogleAuth({
+        credentials: credentialsObj,
+        scopes: ['https://www.googleapis.com/auth/cloud-platform']
+      });
+      const client = await auth.getClient();
+      const tokenResponse = await client.getAccessToken();
+      accessToken = tokenResponse.token;
+    } else {
+      // Jika string biasa
+      accessToken = serviceAccountJson;
+    }
+
     const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
@@ -79,7 +98,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     const aiResponse = await axios.post(vertexUrl, payload, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${aqKey}`
+        'Authorization': `Bearer ${accessToken}`
       },
       timeout: 30000
     });
@@ -98,7 +117,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('VERTEX ERROR:', err.response?.data || err.message);
+    console.error('AUTH ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
