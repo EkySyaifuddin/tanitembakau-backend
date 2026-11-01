@@ -1,7 +1,7 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
-const axios = require('axios');
+const { GoogleGenAI } = require('@google/genai');
 const multer = require('multer');
 require('dotenv').config();
 
@@ -26,8 +26,11 @@ pool.connect((err, client, release) => {
   release();
 });
 
+// Inisialisasi Google Gen AI SDK resmi
+const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY });
+
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (VERTEX AI AQ KEY FIX)
+// ENDPOINT: DETEKSI HAMA 100% AI (OFFICIAL SDK)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -35,9 +38,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const aqKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
-    if (!aqKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY belum diatur di Vercel.' });
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'API key belum diatur di environment Vercel.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -55,37 +58,21 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Menggunakan Project Number dari tangkapan layar HP Anda sebelumnya: 77245166162
-    const projectId = '77245166162';
-    const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
-
-    const payload = {
+    // Menggunakan SDK resmi Google Gen AI untuk menghindari error manual HTTP header
+    const response = await ai.models.generateContent({
+      model: 'gemini-1.5-flash',
       contents: [
+        { text: promptText },
         {
-          role: 'user',
-          parts: [
-            { text: promptText },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Image
-              }
-            }
-          ]
+          inlineData: {
+            mimeType: mimeType,
+            data: base64Image
+          }
         }
       ]
-    };
-
-    // Kirim kunci AQ sebagai Bearer Token ke Vertex AI regional
-    const aiResponse = await axios.post(vertexUrl, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${aqKey}`
-      },
-      timeout: 30000
     });
 
-    const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+    const responseText = response.text;
     if (!responseText) {
       throw new Error('Respons dari server AI kosong.');
     }
@@ -99,9 +86,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('VERTEX AQ ERROR:', err.response?.data || err.message);
-    const errorMsg = err.response?.data?.error?.message || err.message;
-    return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
+    console.error('SDK AI ERROR:', err.message);
+    return res.status(500).json({ error: 'Gagal memproses AI: ' + err.message });
   }
 });
 
