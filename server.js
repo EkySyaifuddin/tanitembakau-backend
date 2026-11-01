@@ -27,7 +27,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (KHUSUS KUNCI AQ...)
+// ENDPOINT: DETEKSI HAMA 100% AI (AI STUDIO V1BETA)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -35,8 +35,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const aqKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
-    if (!aqKey) {
+    const apiKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
+    if (!apiKey) {
       return res.status(500).json({ error: 'GEMINI_API_KEY belum diatur di Vercel.' });
     }
 
@@ -55,16 +55,12 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Ekstrak project number dari tangkapan layar Anda: 77245166162
-    const projectId = '77245166162'; 
-
-    // Menggunakan endpoint Vertex AI regional dengan Bearer Auth token berformat AQ...
-    const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
+    // Menggunakan endpoint AI Studio v1beta dengan parameter key query string
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [
         {
-          role: 'user',
           parts: [
             { text: promptText },
             {
@@ -78,11 +74,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       ]
     };
 
-    const aiResponse = await axios.post(vertexUrl, payload, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${aqKey}`
-      },
+    const aiResponse = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
       timeout: 30000
     });
 
@@ -100,7 +93,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('AQ KEY AI ERROR:', err.response?.data || err.message);
+    console.error('AI STUDIO ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
