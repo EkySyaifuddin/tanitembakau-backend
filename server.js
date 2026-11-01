@@ -27,7 +27,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (AQ KEY MODEL FIX)
+// ENDPOINT: DETEKSI HAMA 100% VERTEX AI
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -35,8 +35,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
-    if (!apiKey) {
+    const aqKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
+    if (!aqKey) {
       return res.status(500).json({ error: 'API key belum diatur di Vercel.' });
     }
 
@@ -55,12 +55,14 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Menggunakan gemini-1.5-pro yang didukung penuh oleh kunci berformat AQ / enterprise
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
+    // Gunakan Vertex AI Publisher Endpoint regional us-central1 dengan project number 77245166162
+    const projectId = '77245166162';
+    const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
       contents: [
         {
+          role: 'user',
           parts: [
             { text: promptText },
             {
@@ -74,14 +76,15 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       ]
     };
 
-    const aiResponse = await axios.post(url, payload, {
-      headers: { 'Content-Type': 'application/json' },
+    const aiResponse = await axios.post(vertexUrl, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${aqKey}`
+      },
       timeout: 30000
     });
 
-    const candidate = aiResponse.data?.candidates?.[0];
-    const responseText = candidate?.content?.parts?.[0]?.text;
-
+    const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!responseText) {
       throw new Error('Respons dari server AI kosong.');
     }
@@ -95,7 +98,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('AI ERROR:', err.response?.data || err.message);
+    console.error('VERTEX ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
