@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
-const { GoogleAuth } = require('google-auth-library');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -27,8 +27,47 @@ pool.connect((err, client, release) => {
   release();
 });
 
+// Fungsi enkripsi JWT native untuk menukar Service Account JSON menjadi Access Token GCP sah
+async function getServiceAccountAccessToken(serviceAccountJsonStr) {
+  const credentials = JSON.parse(serviceAccountJsonStr);
+  const privateKey = credentials.private_key.replace(/\\n/g, '\n');
+  const email = credentials.client_email;
+  const tokenUri = credentials.token_uri || 'https://oauth2.googleapis.com/token';
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss: email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud: tokenUri,
+    exp: now + 3600,
+    iat: now
+  };
+
+  const base64Header = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const unsignedJwt = `${base64Header}.${base64Payload}`;
+
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(unsignedJwt);
+  const signature = sign.sign(privateKey, 'base64url');
+  const jwt = `${unsignedJwt}.${signature}`;
+
+  const tokenResponse = await axios.post(tokenUri, new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: jwt
+  }), {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  });
+
+  return {
+    accessToken: tokenResponse.data.access_token,
+    projectId: credentials.project_id
+  };
+}
+
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% GOOGLE AUTH
+// ENDPOINT: DETEKSI HAMA 100% LIVE GCP SERVICE ACCOUNT
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -36,9 +75,13 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
+    // Pastikan variabel environment di Vercel berisi ISI TEKS JSON Service Account lengkap Anda ({...})
     const serviceAccountJson = process.env.GCP_SERVICE_ACCOUNT_KEY || process.env.GEMINI_API_KEY;
-    if (!serviceAccountJson) {
-      return res.status(500).json({ error: 'Kredensial belum diatur di environment Vercel.' });
+    
+    if (!serviceAccountJson || !serviceAccountJson.trim().startsWith('{')) {
+      return res.status(500).json({ 
+        error: 'Backend wajib menggunakan isi JSON Service Account GCP lengkap, bukan string kunci AQ...' 
+      });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -56,26 +99,10 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    let accessToken = '';
-    let projectId = 'tanitembakau';
+    // Dapatkan Access Token secara otonom dari Service Account JSON
+    const { accessToken, projectId } = await getServiceAccountAccessToken(serviceAccountJson);
 
-    // Jika berupa JSON Service Account, gunakan GoogleAuth untuk generate token resmi
-    if (serviceAccountJson.trim().startsWith('{')) {
-      const credentialsObj = JSON.parse(serviceAccountJson);
-      projectId = credentialsObj.project_id || 'tanitembakau';
-      
-      const auth = new GoogleAuth({
-        credentials: credentialsObj,
-        scopes: ['https://www.googleapis.com/auth/cloud-platform']
-      });
-      const client = await auth.getClient();
-      const tokenResponse = await client.getAccessToken();
-      accessToken = tokenResponse.token;
-    } else {
-      // Jika string biasa
-      accessToken = serviceAccountJson;
-    }
-
+    // Kirim langsung ke Vertex AI Publisher Endpoint regional
     const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
@@ -105,7 +132,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
 
     const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!responseText) {
-      throw new Error('Respons dari server AI kosong.');
+      throw new Error('Respons dari server Google Cloud Vertex AI kosong.');
     }
 
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
@@ -117,9 +144,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('AUTH ERROR:', err.response?.data || err.message);
+    console.error('LIVE GCP ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
-    return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
+    return res.status(500).json({ error: 'Gagal memproses AI secara live: ' + errorMsg });
   }
 });
 
