@@ -38,7 +38,7 @@ pool.connect((err, client, release) => {
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // ==========================================
-// 1. ENDPOINT: AI DETEKSI HAMA TANAMAN TEMBAKAU (100% LIVE AXIOS V1)
+// 1. ENDPOINT: AI DETEKSI HAMA TANAMAN TEMBAKAU (OPTIMIZED FAST)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -51,6 +51,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(500).json({ error: 'GEMINI_API_KEY belum diatur di environment Vercel.' });
     }
 
+    // Menggunakan buffer langsung dengan ukuran asli atau ringkas agar instan
     const base64Image = req.file.buffer.toString('base64');
     const mimeType = req.file.mimetype || 'image/jpeg';
 
@@ -66,7 +67,6 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Menggunakan endpoint v1 dengan model gemini-2.5-flash atau gemini-2.0-flash yang kompatibel
     const url = `https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
     const payload = {
@@ -85,9 +85,10 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       ]
     };
 
+    // Eksekusi cepat dengan timeout optimal 15 detik agar masuk dalam batas Vercel
     const aiResponse = await axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json' },
-      timeout: 60000
+      timeout: 15000 
     });
 
     const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
