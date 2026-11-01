@@ -87,7 +87,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
 
     const aiResponse = await axios.post(url, payload, {
       headers: { 'Content-Type': 'application/json' },
-      timeout: 30000
+      timeout: 60000
     });
 
     const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
