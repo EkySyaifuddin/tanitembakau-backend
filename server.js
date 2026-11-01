@@ -27,7 +27,7 @@ pool.connect((err, client, release) => {
 });
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% STABIL (AXIOS DIRECT)
+// ENDPOINT: DETEKSI HAMA 100% AI (AQ KEY MODEL FIX)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -55,8 +55,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Cek apakah kunci berformat AQ atau standar, gunakan endpoint v1beta generative language
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Menggunakan gemini-1.5-pro yang didukung penuh oleh kunci berformat AQ / enterprise
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [
