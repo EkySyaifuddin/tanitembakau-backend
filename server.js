@@ -27,8 +27,8 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// Fungsi Native JWT Auth (Zero External Library, Anti-Crash di Vercel Serverless)
-async function getVertexAccessToken(serviceAccountJsonStr) {
+// Fungsi Native JWT Auth untuk Service Account
+async function getAccessToken(serviceAccountJsonStr) {
   const credentials = JSON.parse(serviceAccountJsonStr);
   const privateKey = credentials.private_key.replace(/\\n/g, '\n');
   const email = credentials.client_email;
@@ -64,7 +64,7 @@ async function getVertexAccessToken(serviceAccountJsonStr) {
 }
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (NATIVE VERTEX AI)
+// ENDPOINT: DETEKSI HAMA 100% AI (SERVICE ACCOUNT JWT)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -92,17 +92,16 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Dapatkan Access Token secara aman menggunakan Crypto bawaan Node.js
-    const accessToken = await getVertexAccessToken(serviceAccountJson);
-    const credentialsObj = JSON.parse(serviceAccountJson);
-    const projectId = credentialsObj.project_id || 'tanitembakau';
+    // Dapatkan Access Token menggunakan Service Account JSON Anda
+    const accessToken = await getAccessToken(serviceAccountJson);
 
-    const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
+    // Menggunakan endpoint Generative Language API berbasis Cloud Project (Bukan Vertex AI Agent Platform)
+    // Endpoint ini tidak memerlukan aktivasi manual API yang rumit di konsol web
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
       contents: [
         {
-          role: 'user',
           parts: [
             { text: promptText },
             {
@@ -116,7 +115,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       ]
     };
 
-    const aiResponse = await axios.post(vertexUrl, payload, {
+    const aiResponse = await axios.post(url, payload, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
@@ -138,15 +137,13 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('NATIVE AI ERROR:', err.response?.data || err.message);
+    console.error('AI ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
 });
 
-// ==========================================
-// ENDPOINT LAINNYA (DATABASE)
-// ==========================================
+// Endpoint Database pendukung
 app.get('/api/records', async (req, res) => {
   try {
     const result = await pool.query('SELECT * FROM farm_records ORDER BY id DESC');
@@ -166,24 +163,6 @@ app.post('/api/records', async (req, res) => {
     `;
     const result = await pool.query(query, [user_id || 1, record_type, category, amount, description, record_date]);
     res.status(201).json({ message: 'Catatan berhasil disimpan', data: result.rows[0] });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.delete('/api/records/:id', async (req, res) => {
-  try {
-    await pool.query('DELETE FROM farm_records WHERE id = $1', [req.params.id]);
-    res.json({ message: 'Catatan berhasil dihapus' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/market-prices', async (req, res) => {
-  try {
-    const result = await pool.query('SELECT * FROM market_prices ORDER BY id ASC');
-    res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
