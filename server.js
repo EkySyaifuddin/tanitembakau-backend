@@ -3,7 +3,6 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
-const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -27,44 +26,8 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// Fungsi Native JWT Auth untuk Vertex AI Cloud Platform
-async function getVertexAccessToken(serviceAccountJsonStr) {
-  const credentials = JSON.parse(serviceAccountJsonStr);
-  const privateKey = credentials.private_key.replace(/\\n/g, '\n');
-  const email = credentials.client_email;
-  const tokenUri = credentials.token_uri || 'https://oauth2.googleapis.com/token';
-
-  const now = Math.floor(Date.now() / 1000);
-  const header = { alg: 'RS256', typ: 'JWT' };
-  const payload = {
-    iss: email,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
-    aud: tokenUri,
-    exp: now + 3600,
-    iat: now
-  };
-
-  const base64Header = Buffer.from(JSON.stringify(header)).toString('base64url');
-  const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const unsignedJwt = `${base64Header}.${base64Payload}`;
-
-  const sign = crypto.createSign('RSA-SHA256');
-  sign.update(unsignedJwt);
-  const signature = sign.sign(privateKey, 'base64url');
-  const jwt = `${unsignedJwt}.${signature}`;
-
-  const tokenResponse = await axios.post(tokenUri, new URLSearchParams({
-    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    assertion: jwt
-  }), {
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-  });
-
-  return tokenResponse.data.access_token;
-}
-
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (VERTEX AI REGIONAL)
+// ENDPOINT: DETEKSI HAMA 100% AI (KHUSUS KUNCI AQ...)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -72,9 +35,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const serviceAccountJson = process.env.GCP_SERVICE_ACCOUNT_KEY || process.env.GEMINI_API_KEY;
-    if (!serviceAccountJson || !serviceAccountJson.trim().startsWith('{')) {
-      return res.status(500).json({ error: 'GCP_SERVICE_ACCOUNT_KEY di Vercel harus berupa JSON Service Account lengkap.' });
+    const aqKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
+    if (!aqKey) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY belum diatur di Vercel.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -92,12 +55,10 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    const accessToken = await getVertexAccessToken(serviceAccountJson);
-    const credentialsObj = JSON.parse(serviceAccountJson);
-    const projectId = credentialsObj.project_id || 'tanitembakau';
+    // Ekstrak project number dari tangkapan layar Anda: 77245166162
+    const projectId = '77245166162'; 
 
-    // Menggunakan Endpoint Vertex AI Publisher resmi (Bukan Generative Language API)
-    // Jalur ini otomatis diizinkan untuk semua Service Account GCP enterprise tanpa perlu aktifkan API publik
+    // Menggunakan endpoint Vertex AI regional dengan Bearer Auth token berformat AQ...
     const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
@@ -120,7 +81,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     const aiResponse = await axios.post(vertexUrl, payload, {
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${accessToken}`
+        'Authorization': `Bearer ${aqKey}`
       },
       timeout: 30000
     });
@@ -139,7 +100,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('VERTEX AI ERROR:', err.response?.data || err.message);
+    console.error('AQ KEY AI ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
