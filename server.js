@@ -27,7 +27,7 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// Fungsi enkripsi JWT native untuk menukar Service Account JSON menjadi Access Token GCP sah
+// Fungsi enkripsi JWT native untuk menukar Service Account JSON menjadi Access Token GCP
 async function getServiceAccountAccessToken(serviceAccountJsonStr) {
   const credentials = JSON.parse(serviceAccountJsonStr);
   const privateKey = credentials.private_key.replace(/\\n/g, '\n');
@@ -38,7 +38,7 @@ async function getServiceAccountAccessToken(serviceAccountJsonStr) {
   const header = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss: email,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    scope: 'https://www.googleapis.com/auth/generative-language',
     aud: tokenUri,
     exp: now + 3600,
     iat: now
@@ -60,14 +60,11 @@ async function getServiceAccountAccessToken(serviceAccountJsonStr) {
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
   });
 
-  return {
-    accessToken: tokenResponse.data.access_token,
-    projectId: credentials.project_id
-  };
+  return tokenResponse.data.access_token;
 }
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% LIVE GCP SERVICE ACCOUNT
+// ENDPOINT: DETEKSI HAMA 100% LIVE GENERATIVE LANGUAGE
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -75,12 +72,11 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    // Pastikan variabel environment di Vercel berisi ISI TEKS JSON Service Account lengkap Anda ({...})
     const serviceAccountJson = process.env.GCP_SERVICE_ACCOUNT_KEY || process.env.GEMINI_API_KEY;
     
     if (!serviceAccountJson || !serviceAccountJson.trim().startsWith('{')) {
       return res.status(500).json({ 
-        error: 'Backend wajib menggunakan isi JSON Service Account GCP lengkap, bukan string kunci AQ...' 
+        error: 'Backend wajib menggunakan isi JSON Service Account GCP lengkap.' 
       });
     }
 
@@ -99,16 +95,15 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Dapatkan Access Token secara otonom dari Service Account JSON
-    const { accessToken, projectId } = await getServiceAccountAccessToken(serviceAccountJson);
+    // Dapatkan Access Token dengan scope Generative Language
+    const accessToken = await getServiceAccountAccessToken(serviceAccountJson);
 
-    // Kirim langsung ke Vertex AI Publisher Endpoint regional
-    const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
+    // Menggunakan endpoint Generative Language API v1beta (Bukan Vertex AI Agent Platform yang mewajibkan aktivasi manual)
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
       contents: [
         {
-          role: 'user',
           parts: [
             { text: promptText },
             {
@@ -122,7 +117,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       ]
     };
 
-    const aiResponse = await axios.post(vertexUrl, payload, {
+    const aiResponse = await axios.post(url, payload, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
@@ -132,7 +127,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
 
     const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!responseText) {
-      throw new Error('Respons dari server Google Cloud Vertex AI kosong.');
+      throw new Error('Respons dari server AI kosong.');
     }
 
     const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
@@ -144,7 +139,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('LIVE GCP ERROR:', err.response?.data || err.message);
+    console.error('LIVE API ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI secara live: ' + errorMsg });
   }
