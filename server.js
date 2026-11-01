@@ -38,7 +38,7 @@ async function getAccessToken(serviceAccountJsonStr) {
   const header = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss: email,
-    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    scope: 'https://www.googleapis.com/auth/generative-language', // Ubah scope di sini
     aud: tokenUri,
     exp: now + 3600,
     iat: now
