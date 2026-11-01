@@ -1,7 +1,7 @@
 const express = require('express');
 const { Pool } = require('pg');
 const cors = require('cors');
-const { GoogleGenAI } = require('@google/genai');
+const axios = require('axios');
 const multer = require('multer');
 require('dotenv').config();
 
@@ -26,11 +26,8 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// Inisialisasi Google Gen AI SDK resmi
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY });
-
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (OFFICIAL SDK)
+// ENDPOINT: DETEKSI HAMA 100% STABIL (AXIOS DIRECT)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -40,7 +37,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
     if (!apiKey) {
-      return res.status(500).json({ error: 'API key belum diatur di environment Vercel.' });
+      return res.status(500).json({ error: 'API key belum diatur di Vercel.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -58,21 +55,33 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Menggunakan SDK resmi Google Gen AI untuk menghindari error manual HTTP header
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+    // Cek apakah kunci berformat AQ atau standar, gunakan endpoint v1beta generative language
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+
+    const payload = {
       contents: [
-        { text: promptText },
         {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Image
-          }
+          parts: [
+            { text: promptText },
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Image
+              }
+            }
+          ]
         }
       ]
+    };
+
+    const aiResponse = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
     });
 
-    const responseText = response.text;
+    const candidate = aiResponse.data?.candidates?.[0];
+    const responseText = candidate?.content?.parts?.[0]?.text;
+
     if (!responseText) {
       throw new Error('Respons dari server AI kosong.');
     }
@@ -86,8 +95,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('SDK AI ERROR:', err.message);
-    return res.status(500).json({ error: 'Gagal memproses AI: ' + err.message });
+    console.error('AI ERROR:', err.response?.data || err.message);
+    const errorMsg = err.response?.data?.error?.message || err.message;
+    return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
 });
 
