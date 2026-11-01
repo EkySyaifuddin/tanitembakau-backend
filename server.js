@@ -27,8 +27,8 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// Fungsi Native JWT Auth untuk Service Account
-async function getAccessToken(serviceAccountJsonStr) {
+// Fungsi Native JWT Auth untuk Vertex AI Cloud Platform
+async function getVertexAccessToken(serviceAccountJsonStr) {
   const credentials = JSON.parse(serviceAccountJsonStr);
   const privateKey = credentials.private_key.replace(/\\n/g, '\n');
   const email = credentials.client_email;
@@ -38,7 +38,7 @@ async function getAccessToken(serviceAccountJsonStr) {
   const header = { alg: 'RS256', typ: 'JWT' };
   const payload = {
     iss: email,
-    scope: 'https://www.googleapis.com/auth/generative-language', // Ubah scope di sini
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
     aud: tokenUri,
     exp: now + 3600,
     iat: now
@@ -64,7 +64,7 @@ async function getAccessToken(serviceAccountJsonStr) {
 }
 
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (SERVICE ACCOUNT JWT)
+// ENDPOINT: DETEKSI HAMA 100% AI (VERTEX AI REGIONAL)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -92,16 +92,18 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Dapatkan Access Token menggunakan Service Account JSON Anda
-    const accessToken = await getAccessToken(serviceAccountJson);
+    const accessToken = await getVertexAccessToken(serviceAccountJson);
+    const credentialsObj = JSON.parse(serviceAccountJson);
+    const projectId = credentialsObj.project_id || 'tanitembakau';
 
-    // Menggunakan endpoint Generative Language API berbasis Cloud Project (Bukan Vertex AI Agent Platform)
-    // Endpoint ini tidak memerlukan aktivasi manual API yang rumit di konsol web
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
+    // Menggunakan Endpoint Vertex AI Publisher resmi (Bukan Generative Language API)
+    // Jalur ini otomatis diizinkan untuk semua Service Account GCP enterprise tanpa perlu aktifkan API publik
+    const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
 
     const payload = {
       contents: [
         {
+          role: 'user',
           parts: [
             { text: promptText },
             {
@@ -115,7 +117,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       ]
     };
 
-    const aiResponse = await axios.post(url, payload, {
+    const aiResponse = await axios.post(vertexUrl, payload, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`
@@ -137,7 +139,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('AI ERROR:', err.response?.data || err.message);
+    console.error('VERTEX AI ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
