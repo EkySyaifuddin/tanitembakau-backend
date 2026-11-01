@@ -3,7 +3,7 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
 const multer = require('multer');
-const { GoogleAuth } = require('google-auth-library');
+const crypto = require('crypto');
 require('dotenv').config();
 
 const app = express();
@@ -27,8 +27,44 @@ pool.connect((err, client, release) => {
   release();
 });
 
+// Fungsi Native JWT Auth (Zero External Library, Anti-Crash di Vercel Serverless)
+async function getVertexAccessToken(serviceAccountJsonStr) {
+  const credentials = JSON.parse(serviceAccountJsonStr);
+  const privateKey = credentials.private_key.replace(/\\n/g, '\n');
+  const email = credentials.client_email;
+  const tokenUri = credentials.token_uri || 'https://oauth2.googleapis.com/token';
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = { alg: 'RS256', typ: 'JWT' };
+  const payload = {
+    iss: email,
+    scope: 'https://www.googleapis.com/auth/cloud-platform',
+    aud: tokenUri,
+    exp: now + 3600,
+    iat: now
+  };
+
+  const base64Header = Buffer.from(JSON.stringify(header)).toString('base64url');
+  const base64Payload = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const unsignedJwt = `${base64Header}.${base64Payload}`;
+
+  const sign = crypto.createSign('RSA-SHA256');
+  sign.update(unsignedJwt);
+  const signature = sign.sign(privateKey, 'base64url');
+  const jwt = `${unsignedJwt}.${signature}`;
+
+  const tokenResponse = await axios.post(tokenUri, new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: jwt
+  }), {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+  });
+
+  return tokenResponse.data.access_token;
+}
+
 // ==========================================
-// ENDPOINT: DETEKSI HAMA 100% AI (FINAL FIX)
+// ENDPOINT: DETEKSI HAMA 100% AI (NATIVE VERTEX AI)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -36,9 +72,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
     }
 
-    const rawEnvKey = process.env.GEMINI_API_KEY || process.env.GCP_SERVICE_ACCOUNT_KEY;
-    if (!rawEnvKey) {
-      return res.status(500).json({ error: 'Kunci atau kredensial belum diatur di Vercel.' });
+    const serviceAccountJson = process.env.GCP_SERVICE_ACCOUNT_KEY || process.env.GEMINI_API_KEY;
+    if (!serviceAccountJson || !serviceAccountJson.trim().startsWith('{')) {
+      return res.status(500).json({ error: 'GCP_SERVICE_ACCOUNT_KEY di Vercel harus berupa JSON Service Account lengkap.' });
     }
 
     const base64Image = req.file.buffer.toString('base64');
@@ -56,77 +92,39 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    let responseText = '';
+    // Dapatkan Access Token secara aman menggunakan Crypto bawaan Node.js
+    const accessToken = await getVertexAccessToken(serviceAccountJson);
+    const credentialsObj = JSON.parse(serviceAccountJson);
+    const projectId = credentialsObj.project_id || 'tanitembakau';
 
-    // Cek apakah key berupa JSON Service Account (berisi kurawal '{')
-    if (rawEnvKey.trim().startsWith('{')) {
-      let credentials;
-      try {
-        credentials = JSON.parse(rawEnvKey);
-        if (credentials.private_key) {
-          credentials.private_key = credentials.private_key.replace(/\\n/g, '\n');
+    const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
+
+    const payload = {
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            { text: promptText },
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Image
+              }
+            }
+          ]
         }
-      } catch (e) {
-        throw new Error('Format JSON Service Account tidak valid.');
-      }
+      ]
+    };
 
-      const auth = new GoogleAuth({
-        credentials: credentials,
-        scopes: ['https://www.googleapis.com/auth/cloud-platform']
-      });
+    const aiResponse = await axios.post(vertexUrl, payload, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${accessToken}`
+      },
+      timeout: 30000
+    });
 
-      const client = await auth.getClient();
-      const accessToken = await client.getAccessToken();
-      const tokenStr = accessToken.token || accessToken;
-      const projectId = credentials.project_id || 'tanitembakau';
-
-      // Gunakan endpoint Vertex AI regional resmi untuk Service Account
-      const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/gemini-1.5-flash:generateContent`;
-
-      const payload = {
-        contents: [
-          {
-            role: 'user',
-            parts: [
-              { text: promptText },
-              { inlineData: { mimeType: mimeType, data: base64Image } }
-            ]
-          }
-        ]
-      };
-
-      const aiResponse = await axios.post(vertexUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${tokenStr}`
-        },
-        timeout: 30000
-      });
-
-      responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    } else {
-      // Jika itu API Key biasa (AIzaSy...)
-      const pubUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${rawEnvKey}`;
-      const payload = {
-        contents: [
-          {
-            parts: [
-              { text: promptText },
-              { inlineData: { mimeType: mimeType, data: base64Image } }
-            ]
-          }
-        ]
-      };
-
-      const aiResponse = await axios.post(pubUrl, payload, {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 30000
-      });
-
-      responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    }
-
+    const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!responseText) {
       throw new Error('Respons dari server AI kosong.');
     }
@@ -139,12 +137,8 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       data: parsedData
     });
 
-  } catchedErr = (err) => {
-    // penanganan error catch standar
-  }
-
-  catch (err) {
-    console.error('AI ERROR:', err.response?.data || err.message);
+  } catch (err) {
+    console.error('NATIVE AI ERROR:', err.response?.data || err.message);
     const errorMsg = err.response?.data?.error?.message || err.message;
     return res.status(500).json({ error: 'Gagal memproses AI: ' + errorMsg });
   }
