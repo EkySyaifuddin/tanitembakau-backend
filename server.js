@@ -67,7 +67,7 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     `;
 
     // Menggunakan endpoint v1 dengan model gemini-2.5-flash atau gemini-2.0-flash yang kompatibel
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
 
     const payload = {
       contents: [
