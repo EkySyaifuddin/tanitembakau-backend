@@ -38,7 +38,7 @@ pool.connect((err, client, release) => {
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 // ==========================================
-// 1. ENDPOINT: AI DETEKSI HAMA TANAMAN TEMBAKAU (100% LIVE)
+// 1. ENDPOINT: AI DETEKSI HAMA TANAMAN TEMBAKAU (100% LIVE AXIOS V1)
 // ==========================================
 app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
   try {
@@ -66,21 +66,31 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
       }
     `;
 
-    // Memanggil model Gemini 1.5 Flash secara live menggunakan SDK resmi
-    const response = await ai.models.generateContent({
-      model: 'gemini-1.5-flash',
+    // Menggunakan endpoint v1 dengan model gemini-2.5-flash atau gemini-2.0-flash yang kompatibel
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+    const payload = {
       contents: [
-        { text: promptText },
         {
-          inlineData: {
-            mimeType: mimeType,
-            data: base64Image
-          }
+          parts: [
+            { text: promptText },
+            {
+              inlineData: {
+                mimeType: mimeType,
+                data: base64Image
+              }
+            }
+          ]
         }
       ]
+    };
+
+    const aiResponse = await axios.post(url, payload, {
+      headers: { 'Content-Type': 'application/json' },
+      timeout: 30000
     });
 
-    const responseText = response.text;
+    const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!responseText) {
       throw new Error('Respons dari server AI kosong.');
     }
@@ -94,8 +104,9 @@ app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
     });
 
   } catch (err) {
-    console.error('AI ERROR:', err.message);
-    return res.status(500).json({ error: 'Gagal memproses AI secara live: ' + err.message });
+    console.error('AI ERROR:', err.response?.data || err.message);
+    const errorMsg = err.response?.data?.error?.message || err.message;
+    return res.status(500).json({ error: 'Gagal memproses AI secara live: ' + errorMsg });
   }
 });
 
