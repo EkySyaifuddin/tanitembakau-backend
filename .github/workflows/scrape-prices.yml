@@ -1,0 +1,16 @@
+name: Auto Scrape Live Market Prices
+
+on:
+  schedule:
+    # Menjalankan bot scraping otomatis setiap jam 06:00 Pagi WIB (23:00 UTC)
+    - cron: '0 23 * * *'
+  workflow_dispatch: # Mengizinkan tombol 'Run' manual di tab Actions GitHub
+
+jobs:
+  scrape-job:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5 # Mencegah job menggantung terlalu lama jika server lambat
+    steps:
+      - name: Trigger Web Scraper Endpoint Vercel
+        run: |
+          curl -sS -X POST https://tanitembakau-backend.vercel.app/api/market-prices/scrape-live

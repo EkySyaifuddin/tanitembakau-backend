@@ -1,0 +1,24 @@
+# Rahasia & environment
+.env
+.env.*
+!.env.example
+Backend/.env
+
+# Dependensi Node.js
+node_modules/
+Backend/node_modules/
+Frontend/node_modules/
+
+# Build & cache Flutter (tanitembakau_mobile)
+tanitembakau_mobile/.dart_tool/
+tanitembakau_mobile/build/
+tanitembakau_mobile/.flutter-plugins
+tanitembakau_mobile/.flutter-plugins-dependencies
+tanitembakau_mobile/.idea/
+tanitembakau_mobile/*.iml
+
+# File plugin hasil generate otomatis Flutter
+tanitembakau_mobile/linux/flutter/generated_plugin_registrant.*
+tanitembakau_mobile/linux/flutter/generated_plugins.cmake
+tanitembakau_mobile/macos/Flutter/GeneratedPluginRegistrant.swift
+tanitembakau_mobile/windows/flutter/generated_plugin_registrant.*

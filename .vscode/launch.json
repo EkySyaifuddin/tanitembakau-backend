@@ -1,0 +1,28 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "tanitembakau_mobile",
+            "cwd": "tanitembakau_mobile",
+            "request": "launch",
+            "type": "dart"
+        },
+        {
+            "name": "tanitembakau_mobile (profile mode)",
+            "cwd": "tanitembakau_mobile",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "profile"
+        },
+        {
+            "name": "tanitembakau_mobile (release mode)",
+            "cwd": "tanitembakau_mobile",
+            "request": "launch",
+            "type": "dart",
+            "flutterMode": "release"
+        }
+    ]
+}

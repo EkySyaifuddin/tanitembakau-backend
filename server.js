@@ -3,19 +3,13 @@ const { Pool } = require('pg');
 const cors = require('cors');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const multer = require('multer');
-const { GoogleGenAI } = require('@google/genai');
 require('dotenv').config();
 
 const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ extended: true, limit: '15mb' }));
-
-// Konfigurasi Multer untuk menangani upload gambar di memori (Serverless Vercel friendly)
-const upload = multer({ storage: multer.memoryStorage() });
+app.use(express.json());
 
 // Konfigurasi koneksi ke database Supabase PostgreSQL
 const pool = new Pool({
@@ -34,88 +28,9 @@ pool.connect((err, client, release) => {
   release();
 });
 
-// Inisialisasi Google Gen AI SDK resmi
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-
 // ==========================================
-// 1. ENDPOINT: AI DETEKSI HAMA TANAMAN TEMBAKAU (OPTIMIZED FAST)
+// 1. ENDPOINTS: CATATAN KEUANGAN (farm_records)
 // ==========================================
-app.post('/api/detect-pest', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'File gambar tidak ditemukan.' });
-    }
-
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ error: 'GEMINI_API_KEY belum diatur di environment Vercel.' });
-    }
-
-    // Menggunakan buffer langsung dengan ukuran asli atau ringkas agar instan
-    const base64Image = req.file.buffer.toString('base64');
-    const mimeType = req.file.mimetype || 'image/jpeg';
-
-    const promptText = `
-      Anda adalah pakar patologi tanaman tembakau profesional. Analisis foto daun yang diunggah dengan cermat.
-      Jika foto tersebut bukan daun atau tanaman tembakau (seperti daun mangga atau objek lain), jelaskan pada bagian pestName bahwa itu bukan tanaman tembakau.
-      Berikan respons HANYA dalam format JSON murni tanpa ada pembungkus markdown dengan struktur persis seperti ini:
-      {
-        "pestName": "Nama Hama / Penyakit / Bukan Tanaman Tembakau",
-        "confidence": "95.0%",
-        "symptoms": "Deskripsi singkat gejala atau kondisi objek pada foto",
-        "solution": "Saran penanganan teknis bagi petani"
-      }
-    `;
-
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key=${apiKey}`;
-
-    const payload = {
-      contents: [
-        {
-          parts: [
-            { text: promptText },
-            {
-              inlineData: {
-                mimeType: mimeType,
-                data: base64Image
-              }
-            }
-          ]
-        }
-      ]
-    };
-
-    // Eksekusi cepat dengan timeout optimal 15 detik agar masuk dalam batas Vercel
-    const aiResponse = await axios.post(url, payload, {
-      headers: { 'Content-Type': 'application/json' },
-      timeout: 15000 
-    });
-
-    const responseText = aiResponse.data?.candidates?.[0]?.content?.parts?.[0]?.text;
-    if (!responseText) {
-      throw new Error('Respons dari server AI kosong.');
-    }
-
-    const cleanJsonText = responseText.replace(/```json|```/g, '').trim();
-    const parsedData = JSON.parse(cleanJsonText);
-
-    return res.status(200).json({
-      success: true,
-      data: parsedData
-    });
-
-  } catch (err) {
-    console.error('AI ERROR:', err.response?.data || err.message);
-    const errorMsg = err.response?.data?.error?.message || err.message;
-    return res.status(500).json({ error: 'Gagal memproses AI secara live: ' + errorMsg });
-  }
-});
-
-// ==========================================
-// 2. ENDPOINTS: CATATAN KEUANGAN (farm_records)
-// ==========================================
-
-// GET: Ambil semua catatan keuangan
 app.get('/api/records', async (req, res) => {
   try {
     const query = 'SELECT * FROM farm_records ORDER BY id DESC';
@@ -127,10 +42,8 @@ app.get('/api/records', async (req, res) => {
   }
 });
 
-// POST: Tambah catatan keuangan baru
 app.post('/api/records', async (req, res) => {
   const { user_id, record_type, category, amount, description, record_date } = req.body;
-  
   try {
     const query = `
       INSERT INTO farm_records (user_id, record_type, category, amount, description, record_date) 
@@ -139,7 +52,6 @@ app.post('/api/records', async (req, res) => {
     `;
     const values = [user_id || 1, record_type, category, amount, description, record_date];
     const result = await pool.query(query, values);
-    
     res.status(201).json({ message: 'Catatan berhasil disimpan', data: result.rows[0] });
   } catch (err) {
     console.error('Error menyimpan data:', err.message);
@@ -147,22 +59,14 @@ app.post('/api/records', async (req, res) => {
   }
 });
 
-// DELETE: Hapus catatan keuangan berdasarkan ID
 app.delete('/api/records/:id', async (req, res) => {
   const { id } = req.params;
-
-  if (!id) {
-    return res.status(400).json({ error: 'ID tidak boleh kosong' });
-  }
-  
   try {
     const query = 'DELETE FROM farm_records WHERE id = $1';
     const result = await pool.query(query, [id]);
-
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Data dengan ID tersebut tidak ditemukan' });
     }
-
     res.json({ message: 'Catatan berhasil dihapus', rowCount: result.rowCount });
   } catch (err) {
     console.error('Error saat menghapus data:', err.message);
@@ -171,10 +75,8 @@ app.delete('/api/records/:id', async (req, res) => {
 });
 
 // ==========================================
-// 3. ENDPOINTS: HARGA PASAR (market_prices)
+// 2. ENDPOINTS: HARGA PASAR (market_prices)
 // ==========================================
-
-// GET: Ambil semua data harga pasar tembakau secara dinamis
 app.get('/api/market-prices', async (req, res) => {
   try {
     const query = 'SELECT * FROM market_prices ORDER BY id ASC';
@@ -186,7 +88,6 @@ app.get('/api/market-prices', async (req, res) => {
   }
 });
 
-// POST: Tambah data harga pasar baru (Manual / Opsional)
 app.post('/api/market-prices', async (req, res) => {
   const { komoditas, wilayah, harga, trend, sumber } = req.body;
   try {
@@ -197,7 +98,6 @@ app.post('/api/market-prices', async (req, res) => {
     `;
     const values = [komoditas, wilayah, harga, trend || 'stabil', sumber || 'Dinas/APTI'];
     const result = await pool.query(query, values);
-    
     res.status(201).json({ message: 'Harga pasar berhasil ditambahkan', data: result.rows[0] });
   } catch (err) {
     console.error('Error menyimpan harga pasar:', err.message);
@@ -206,15 +106,14 @@ app.post('/api/market-prices', async (req, res) => {
 });
 
 // ==========================================
-// 4. ENDPOINT: WEB SCRAPING LIVE
+// 3. ENDPOINT: WEB SCRAPING LIVE
 // ==========================================
 app.post('/api/market-prices/scrape-live', async (req, res) => {
   try {
     const targetUrl = 'https://sumber-berita-pangan.id/harga-tembakau'; 
-
     const { data: html } = await axios.get(targetUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
 
@@ -241,18 +140,15 @@ app.post('/api/market-prices/scrape-live', async (req, res) => {
       const checkResult = await pool.query(checkQuery, [item.komoditas, item.wilayah]);
 
       if (checkResult.rows.length > 0) {
-        const updateQuery = `
-          UPDATE market_prices 
-          SET harga = $1, trend = $2, sumber = $3, updated_at = NOW() 
-          WHERE komoditas = $4 AND wilayah = $5
-        `;
-        await pool.query(updateQuery, [item.harga, item.trend, item.sumber, item.komoditas, item.wilayah]);
+        await pool.query(
+          'UPDATE market_prices SET harga = $1, trend = $2, sumber = $3, updated_at = NOW() WHERE komoditas = $4 AND wilayah = $5',
+          [item.harga, item.trend, item.sumber, item.komoditas, item.wilayah]
+        );
       } else {
-        const insertQuery = `
-          INSERT INTO market_prices (komoditas, wilayah, harga, trend, sumber, updated_at) 
-          VALUES ($1, $2, $3, $4, $5, NOW())
-        `;
-        await pool.query(insertQuery, [item.komoditas, item.wilayah, item.harga, item.trend, item.sumber]);
+        await pool.query(
+          'INSERT INTO market_prices (komoditas, wilayah, harga, trend, sumber, updated_at) VALUES ($1, $2, $3, $4, $5, NOW())',
+          [item.komoditas, item.wilayah, item.harga, item.trend, item.sumber]
+        );
       }
     }
 
